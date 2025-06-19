@@ -1,0 +1,1007 @@
+Table of contents
+Data Read-in
+Data Cleaning
+Data Visualization Settings
+Summary Visualization for 15 Minutes Section
+Models for Instructed Section
+Model Results on 15 Minutes Section
+Ridge Plots
+Spinal Segment Analysis
+Author
+Brendan Callender and Andrew Kerr
+
+Data Read-in
+Code
+Data Cleaning
+Min-max Normalization of Time for 15 Minutes Section
+Code
+Aggregating Data by Second for Instructed Section
+Code
+Code
+Create Dataset for Modeling
+Code
+Data Visualization Settings
+Code
+Summary Visualization for 15 Minutes Section
+Code
+
+
+Code
+
+
+Code
+
+
+Code
+
+
+Models for Instructed Section
+Lower Back
+Code
+boundary (singular) fit: see help('isSingular')
+Code
+
+
+Code
+
+
+95% Intervals for Lower Back
+Posture	CI	PI
+good	(0.94, 4.02)	(-5.24, 10.2)
+laying back	(29.35, 43.32)	(26.04, 46.63)
+lumbar slouch	(9.81, 18.28)	(5.38, 22.71)
+neck slouch	(-0.28, 4.71)	(-5.75, 10.18)
+shoulder slouch	(2.41, 11.02)	(-1.99, 15.42)
+
+
+Mid Back
+Code
+
+
+Code
+
+
+95% Intervals for Mid Back
+Posture	CI	PI
+good	(-1.19, 0.71)	(-7.93, 7.46)
+laying back	(15.5, 19.49)	(9.6, 25.39)
+lumbar slouch	(-6.51, -2.51)	(-12.4, 3.38)
+neck slouch	(-3.62, 0.38)	(-9.51, 6.27)
+shoulder slouch	(-15.17, -11.18)	(-21.06, -5.28)
+
+
+Neck
+Code
+
+
+Code
+
+
+95% Intervals for Neck
+Posture	CI	PI
+good	(-1.11, 3.88)	(-10.24, 13.01)
+laying back	(-3.6, 3.64)	(-11.89, 11.94)
+lumbar slouch	(-4.95, 2.29)	(-13.25, 10.58)
+neck slouch	(-46.97, -39.73)	(-55.27, -31.43)
+shoulder slouch	(-9.65, -2.41)	(-17.95, 5.88)
+
+
+Model Results on 15 Minutes Section
+Code
+Code
+Lower Back
+Code
+# A tibble: 3 × 2
+  posture_group proportion
+  <fct>              <dbl>
+1 Good              0.846 
+2 Meh               0.108 
+3 Bad               0.0462
+
+
+Code
+# A tibble: 3 × 2
+  posture_group   proportion
+  <chr>                <dbl>
+1 Unclassified        0.0683
+2 neck slouch         0.0870
+3 shoulder slouch     0.845 
+
+
+Lower Back
+Code
+# A tibble: 3 × 2
+  posture_group proportion
+  <fct>              <dbl>
+1 Good              0.433 
+2 Meh               0.0311
+3 Bad               0.536 
+
+
+Code
+# A tibble: 4 × 2
+  posture_group   proportion
+  <chr>                <dbl>
+1 Unclassified       0.276  
+2 good               0.00558
+3 neck slouch        0.397  
+4 shoulder slouch    0.322  
+
+
+Neck
+Code
+# A tibble: 3 × 2
+  posture_group proportion
+  <fct>              <dbl>
+1 Good               0.263
+2 Meh                0.200
+3 Bad                0.537
+
+
+Code
+# A tibble: 4 × 2
+  posture_group   proportion
+  <chr>                <dbl>
+1 Unclassified       0.206  
+2 lumbar slouch      0.00335
+3 neck slouch        0.0166 
+4 shoulder slouch    0.774  
+
+
+Ridge Plots
+All Devices
+Code
+
+
+Code
+
+
+Code
+
+
+Lower Back
+Code
+
+
+Mid Back
+Code
+
+
+Neck
+Code
+
+
+Source Code
+
+---
+title: "Spinal Segment Analysis"
+author: "Brendan Callender and Andrew Kerr"
+format: 
+  html:
+    toc: true
+    toc-depth: 4
+    code-fold: true
+    code-tools: true
+    embed-resources: true
+---
+
+```{r}
+#| warning: false
+#| message: false
+#| include: false
+library(here)
+library(lubridate)
+library(lme4)
+library(nlme)
+library(car)
+library(emmeans)
+library(ggridges)
+library(viridis)
+library(hrbrthemes)
+library(MASS)
+library(tidyverse)
+library(gt)
+
+theme_set(theme_minimal())
+```
+
+## Data Read-in
+
+```{r}
+#| message: false
+free <- read_csv(here("data", "free_15min.csv")) %>%
+  mutate(
+    participant = factor(
+      participant, 
+      levels = as.character(sort(as.numeric(unique(participant))))
+      )
+  ) %>%
+  dplyr::select(-angle_y, -angle_z)
+instructed <- read_csv(here("data", "instructed.csv"))
+```
+
+### Data Cleaning
+
+#### Min-max Normalization of Time for 15 Minutes Section
+
+```{r}
+free_norm <- free %>%
+  group_by(participant, device_location) %>%
+  mutate(
+    # Calculate the time range for each group in seconds
+    time_min_sec = as.numeric(min(chip_time)),
+    time_max_sec = as.numeric(max(chip_time)),
+    time_range_sec = time_max_sec - time_min_sec,
+    # Normalize chip_time to be between 0 and 1
+    normalized_chip_time = (as.numeric(chip_time) - time_min_sec) / time_range_sec
+  ) %>%
+  # If two or more normalized_chip_time values have multiple angle_x values, take the average
+  group_by(participant, device_location, normalized_chip_time) %>%
+  mutate(normalized_angle_x = mean(angle_x)) %>%
+  dplyr::select(-c(time_min_sec, time_max_sec, time_range_sec))
+```
+
+#### Aggregating Data by Second for Instructed Section
+
+```{r}
+instructed_agg <- instructed %>%
+  mutate(sec = floor(time)) %>%
+  group_by(participant, device_location, posture, sec) %>%
+  summarize(angle_x = mean(angle_x), .groups = "keep")
+```
+
+```{r}
+instructed_agg_nested <- instructed %>%
+  mutate(nested_sec = floor(nested_time)) %>%
+  group_by(participant, device_location, posture, nested_sec) %>%
+  summarize(angle_x = mean(angle_x), .groups = "keep")
+```
+
+#### Create Dataset for Modeling
+
+```{r}
+#| message: false
+model_data <- instructed_agg_nested %>% 
+  filter(posture != "transition") %>%
+  group_by(participant, device_location, posture) %>%
+  summarize(angle_x = mean(angle_x, na.rm = TRUE)) %>%
+  ungroup() %>%
+  pivot_wider(id_cols = c(participant, posture), names_from = device_location, values_from = angle_x) %>%
+  mutate(posture = if_else(str_detect(posture, "good"), "good", posture)) %>%
+  ungroup() %>%
+  rename(
+    "lower_back" = 3,
+    "mid_back" = 4,
+    "neck" = 5
+  )
+
+model_data_free <- free_norm %>% 
+  group_by(participant, device_location) %>%
+  summarize(angle_x = mean(angle_x, na.rm = TRUE)) %>%
+  ungroup() %>%
+  pivot_wider(id_cols = participant, names_from = device_location, values_from = angle_x) %>%
+  ungroup()
+```
+
+## Data Visualization Settings
+
+```{r}
+xmin <- c(0,10,14,24,27,37,41,51,54,64,67,77,80,90,93,103,106)
+xmax <- lead(xmin,1)
+xmax[17] <- 116
+ymin <- rep(-70,17)
+ymax <- rep(70,17)
+
+time_ranges <- data.frame(
+  xmin = xmin, 
+  xmax = xmax, 
+  ymin = ymin, 
+  ymax = ymax,
+  posture = c(rep(c("good", "transition", "bad", "transition"), 4), "good")) 
+```
+
+## Summary Visualization for 15 Minutes Section
+
+```{r}
+summary_df <- free_norm %>%
+  group_by(participant, device_location) %>%
+  summarise(
+    range_of_motion = max(angle_x) - min(angle_x),
+    mean = mean(angle_x),
+    median = median(angle_x),
+    iqr = IQR(angle_x),
+    .groups = 'keep'
+  )
+
+summary_df %>%
+  ggplot() +
+  geom_tile(aes(x = device_location, y = participant, fill = range_of_motion)) +
+  scale_fill_distiller(palette = 'Spectral') +
+  labs(title = "Heatmap of Range of Motion by Participant") +
+  theme_bw()
+
+summary_df %>%
+  ggplot() +
+  geom_tile(aes(x = device_location, y = participant, fill = mean)) +
+  scale_fill_distiller(palette = 'Spectral') +
+  labs(title = "Heatmap of Average Angle X by Participant") +
+  theme_bw()
+
+summary_df %>%
+  ggplot() +
+  geom_tile(aes(x = device_location, y = participant, fill = median)) +
+  scale_fill_distiller(palette = 'Spectral') +
+  labs(title = "Heatmap of Median Angle X by Participant") +
+  theme_bw()
+
+summary_df %>%
+  ggplot() +
+  geom_tile(aes(x = device_location, y = participant, fill = iqr)) +
+  scale_fill_distiller(palette = 'Spectral') +
+  labs(title = "Heatmap of IQR of Angle X by Participant") +
+  theme_bw()
+```
+
+## Models for Instructed Section
+
+### Lower Back
+
+```{r}
+lmer_lb <- lmer(lower_back ~  posture + (1 + posture  | participant), data = model_data)
+
+plot(lmer_lb)
+qqnorm(residuals(lmer_lb))
+qqline(residuals(lmer_lb))
+```
+
+
+
+```{r}
+#| warning: false
+#| echo: false
+custom_combos <- data.frame(
+  posture = model_data$posture %>% unique()
+)
+
+custom_preds <- ref_grid(
+  lmer_lb,
+  data = custom_combos,
+  cov.reduce = FALSE,
+)
+
+model_preds_lb <- emmeans(custom_preds, 
+                         specs = ~ posture,
+                         type = "response"
+                         ) %>% 
+  as_tibble()
+
+model_preds_lb_pi <- predict(custom_preds, 
+                         specs = ~ posture,
+                         type = "response",
+                         interval = "prediction"
+                         ) %>% 
+  as_tibble()
+
+model_preds_lb %>%
+  left_join(model_preds_lb_pi, by = "posture") %>%
+  mutate(
+    Posture = posture,
+    CI = paste0("(", round(emmean - 1.96*SE.x, 2), ", ", round(emmean + 1.96*SE.x, 2), ")", sep = ""),
+    PI = paste0("(", round(prediction - 1.96*SE.y, 2), ", ", round(prediction + 1.96*SE.y, 2), ")", sep = "")
+    ) %>%
+  select(Posture, CI, PI) %>%
+  gt() %>%
+  tab_header(title = "95% Intervals for Lower Back")
+
+# plot(custom_preds, PIs = TRUE) + theme_bw()
+
+model_preds_lb %>%
+  ggplot(aes(color = posture)) +
+
+  # confidence interval
+  geom_point(aes(y = posture, x = emmean), size = 3) +
+  # geom_errorbar(aes(y = posture, xmin = asymp.LCL, xmax = asymp.UCL)) +
+  geom_errorbar(aes(y = posture, xmin = lower.CL, xmax = upper.CL), width = 0, size = 2) +
+
+  # prediction interval
+  geom_point(data = model_preds_lb_pi,
+             aes(y = posture, x = prediction)) +
+  geom_errorbar(data = model_preds_lb_pi,
+                aes(y = posture, xmin = lower.PL, xmax = upper.PL), width = 0, size = 3, alpha = .4) +
+
+  geom_vline(aes(xintercept = xint), lty = 2, color = "red", data = data.frame(xint = 0)) +
+  
+  # observed
+  geom_point(data = model_data,
+             aes(x = lower_back,
+                 y = posture),
+             alpha = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "LMM: Lower Back Sensor",
+    x = "Angle X",
+    y = "Posture"
+    ) +
+  theme(legend.position = "none",
+        plot.title.position = "plot")
+```
+
+### Mid Back
+
+```{r}
+lmer_mb <- lmer(mid_back ~ posture + (1 | participant), data = model_data)
+
+plot(lmer_mb)
+qqnorm(residuals(lmer_mb))
+qqline(residuals(lmer_mb))
+```
+
+```{r}
+#| warning: false
+#| echo: false
+custom_combos <- data.frame(
+  posture = model_data$posture %>% unique()
+)
+
+custom_preds <- ref_grid(
+  lmer_mb,
+  data = custom_combos,
+  cov.reduce = FALSE,
+)
+
+model_preds_mb <- emmeans(custom_preds, 
+                         specs = ~ posture,
+                         type = "response"
+                         ) %>% 
+  as_tibble()
+
+model_preds_mb_pi <- predict(custom_preds, 
+                         specs = ~ posture,
+                         type = "response",
+                         interval = "prediction"
+                         ) %>% 
+  as_tibble()
+
+model_preds_mb %>%
+  left_join(model_preds_mb_pi, by = "posture") %>%
+  mutate(
+    Posture = posture,
+    CI = paste0("(", round(emmean - 1.96*SE.x, 2), ", ", round(emmean + 1.96*SE.x, 2), ")", sep = ""),
+    PI = paste0("(", round(prediction - 1.96*SE.y, 2), ", ", round(prediction + 1.96*SE.y, 2), ")", sep = "")
+    ) %>%
+  select(Posture, CI, PI) %>%
+  gt() %>%
+  tab_header(title = "95% Intervals for Mid Back")
+
+# plot(custom_preds, PIs = TRUE) + theme_bw()
+
+model_preds_mb %>%
+  ggplot(aes(color = posture)) +
+
+  # confidence interval
+  geom_point(aes(y = posture, x = emmean), size = 3) +
+  # geom_errorbar(aes(y = posture, xmin = asymp.LCL, xmax = asymp.UCL)) +
+  geom_errorbar(aes(y = posture, xmin = lower.CL, xmax = upper.CL), width = 0, size = 2) +
+
+  # prediction interval
+  geom_point(data = model_preds_mb_pi,
+             aes(y = posture, x = prediction)) +
+  geom_errorbar(data = model_preds_mb_pi,
+                aes(y = posture, xmin = lower.PL, xmax = upper.PL), width = 0, size = 3, alpha = .4) +
+
+  geom_vline(aes(xintercept = xint), lty = 2, color = "red", data = data.frame(xint = 0)) +
+  
+  # observed
+  geom_point(data = model_data,
+             aes(x = mid_back,
+                 y = posture),
+             alpha = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "LMM: Mid Back Sensor",
+    x = "Angle X",
+    y = "Posture"
+    ) +
+  theme(legend.position = "none",
+        plot.title.position = "plot")
+```
+
+### Neck
+
+```{r}
+lmer_n <- lmer(neck ~ posture + (1 | participant), data = model_data)
+
+plot(lmer_n)
+qqnorm(residuals(lmer_n))
+qqline(residuals(lmer_n))
+```
+
+```{r}
+#| echo: false
+#| warning: false
+custom_combos <- data.frame(
+  posture = model_data$posture %>% unique()
+)
+
+custom_preds <- ref_grid(
+  lmer_n,
+  data = custom_combos,
+  cov.reduce = FALSE,
+)
+
+model_preds_n <- emmeans(custom_preds, 
+                         specs = ~ posture,
+                         type = "response"
+                         ) %>% 
+  as_tibble()
+
+model_preds_n_pi <- predict(custom_preds, 
+                         specs = ~ posture,
+                         type = "response",
+                         interval = "prediction"
+                         ) %>% 
+  as_tibble()
+
+
+model_preds_n %>%
+  left_join(model_preds_n_pi, by = "posture") %>%
+  mutate(
+    Posture = posture,
+    CI = paste0("(", round(emmean - 1.96*SE.x, 2), ", ", round(emmean + 1.96*SE.x, 2), ")", sep = ""),
+    PI = paste0("(", round(prediction - 1.96*SE.y, 2), ", ", round(prediction + 1.96*SE.y, 2), ")", sep = "")
+    ) %>%
+  select(Posture, CI, PI) %>%
+  gt() %>%
+  tab_header(title = "95% Intervals for Neck")
+
+# plot(custom_preds, PIs = TRUE) + theme_bw()
+
+model_preds_n %>%
+  ggplot(aes(color = posture)) +
+
+  # confidence interval
+  geom_point(aes(y = posture, x = emmean), size = 3) +
+  # geom_errorbar(aes(y = posture, xmin = asymp.LCL, xmax = asymp.UCL)) +
+  geom_errorbar(aes(y = posture, xmin = lower.CL, xmax = upper.CL), width = 0, size = 2) +
+
+  # prediction interval
+  geom_point(data = model_preds_n_pi,
+             aes(y = posture, x = prediction)) +
+  geom_errorbar(data = model_preds_n_pi,
+                aes(y = posture, xmin = lower.PL, xmax = upper.PL), width = 0, size = 3, alpha = .4) +
+
+  geom_vline(aes(xintercept = xint), lty = 2, color = "red", data = data.frame(xint = 0)) +
+  
+  # observed
+  geom_point(data = model_data,
+             aes(x = neck,
+                 y = posture),
+             alpha = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "LMM: Neck Sensor",
+    x = "Angle X",
+    y = "Posture"
+    ) +
+  theme(legend.position = "none",
+        plot.title.position = "plot")
+```
+
+## Model Results on 15 Minutes Section
+
+```{r}
+plot_classifications <- function(df, PI, loc, p) {
+  # Filter data for this participant and location
+  plot_data <- df %>%
+    filter(participant == p, device_location == loc)
+
+  # Extract good posture prediction interval limits
+  good_lower <- PI %>% filter(posture == "good") %>% pull(lower.PL)
+  good_upper <- PI %>% filter(posture == "good") %>% pull(upper.PL)
+
+  # TEMP Definition of Meh Posture
+  meh_low_lower <- good_lower - 3
+  meh_low_upper <- good_lower
+
+  meh_high_lower <- good_upper
+  meh_high_upper <- good_upper + 3
+  
+  # --- Calculate Posture Proportions ---
+  plot_data_classified <- plot_data %>%
+    mutate(
+      # Classify each data point
+      posture_group = case_when(
+        normalized_angle_x >= good_lower & normalized_angle_x <= good_upper ~ "Good",
+        (normalized_angle_x >= meh_low_lower & normalized_angle_x < good_lower) |
+        (normalized_angle_x > good_upper & normalized_angle_x <= meh_high_upper) ~ "Meh",
+        TRUE ~ "Bad"
+      ),
+      posture_group = factor(posture_group, levels = c("Good", "Meh", "Bad"))
+      # posture_group = factor(posture_group, levels = c("Good", "Bad"))
+    )
+  
+  # Calculate proportions for each posture group
+  proportions_tbl <- plot_data_classified %>%
+    group_by(posture_group) %>%
+    summarise(proportion = n() / nrow(plot_data_classified)) %>%
+    complete(posture_group, fill = list(proportion = 0)) %>%
+    arrange(posture_group)
+
+  # Create legend labels with proportions
+  legend_labels_with_props <- paste0(
+    proportions_tbl$posture_group, 
+    " (", 
+    scales::percent(proportions_tbl$proportion, accuracy = 1),
+    ")"
+  )
+  # --- End Calculate Posture Proportions ---
+  
+  # Define x-axis limits for the background rectangles (assuming normalized time 0-1)
+  xmin_rect <- 0
+  xmax_rect <- 1
+  
+  # Define y-axis limits for the different posture classification zones
+  ymin_rect <- c(-Inf, meh_low_lower, good_lower, good_upper, meh_high_upper)
+  ymax_rect <- c(meh_low_lower, good_lower, good_upper, meh_high_upper, Inf)
+  # ymin_rect <- c(-Inf, good_lower, good_upper)
+  # ymax_rect <- c(good_lower, good_upper, Inf)
+  
+  # Create a dataframe for the background rectangles representing posture zones
+  time_ranges <- data.frame(
+    xmin = xmin_rect,  
+    xmax = xmax_rect,  
+    ymin = ymin_rect,  
+    ymax = ymax_rect,
+    posture_cat = factor(c("Bad", "Meh", "Good", "Meh", "Bad"),
+                         levels = c("Good", "Meh", "Bad"))
+    # posture_cat = factor(c("Bad", "Good", "Bad"), 
+    #                      levels = c("Good", "Bad"))
+  )
+  
+  # Generate the plot
+  classification_plot <- ggplot(plot_data) +
+    # Line plot for the actual data
+    geom_line(aes(x = normalized_chip_time, y = normalized_angle_x)) +
+    # Rectangles for posture zones
+    geom_rect(
+      aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = posture_cat), 
+      alpha = 0.4, 
+      data = time_ranges
+    ) +
+    theme_minimal() +
+    labs(
+      title = paste("Posture Classification for Participant", p),
+      subtitle = paste("Location:", loc, "- 15min Free Section"),
+      x = "Normalized Chip Time",
+      y = "Normalized Angle X",
+      fill = "Posture Type"
+    ) +
+    scale_fill_manual(
+      values = c("Good" = "seagreen3", "Meh" = "gold", "Bad" = "salmon"),
+      # values = c("Good" = "seagreen3", "Bad" = "salmon"),
+      breaks = c("Good", "Meh", "Bad"),
+      # breaks = c("Good", "Bad"),
+      labels = legend_labels_with_props
+    )
+  
+  print(proportions_tbl)
+  
+  return(classification_plot)
+
+}
+```
+
+```{r}
+plot_classifications_advanced <- function(df, PI, loc, p) {
+  # Filter data for this participant and location
+  plot_data <- df %>%
+    filter(participant == p, device_location == loc)
+  
+  # Remove "laying back" posture
+  PI <- PI %>% filter(posture != "laying back") 
+  
+  # Get unique postures from PI
+  postures <- levels(droplevels(PI$posture, exclude = "laying back"))
+  
+  # --- Calculate Posture Proportions ---
+  # Create a list of posture intervals for classification
+  posture_intervals <- PI %>%
+    select(posture, lower.PL, upper.PL) %>%
+    split(.$posture)
+  
+  # Classify each data point
+  plot_data_classified <- plot_data %>%
+    mutate(posture_group = "Unclassified")
+  
+  # Apply classification by checking each posture's interval
+  for (post in postures) {
+    interval <- posture_intervals[[post]]
+    plot_data_classified <- plot_data_classified %>%
+      mutate(
+        posture_group = ifelse(
+          normalized_angle_x >= interval$lower.PL & 
+          normalized_angle_x <= interval$upper.PL,
+          post,
+          posture_group
+        )
+      )
+  }
+  
+  # Calculate proportions for each posture group
+  proportions_tbl <- plot_data_classified %>%
+    group_by(posture_group) %>%
+    summarise(proportion = n() / nrow(plot_data_classified)) %>%
+    complete(posture_group, fill = list(proportion = 0)) %>%
+    arrange(posture_group)
+
+  # Create legend labels with proportions
+  legend_labels_with_props <- paste0(
+    proportions_tbl$posture_group, 
+    " (", 
+    scales::percent(proportions_tbl$proportion, accuracy = 1),
+    ")"
+  )
+  # --- End Calculate Posture Proportions ---
+  
+  # Create a dataframe for the background rectangles representing posture zones
+  time_ranges <- PI %>%
+    select(posture, lower.PL, upper.PL) %>%
+    mutate(
+      xmin = 0,
+      xmax = 1,
+      ymin = lower.PL,
+      ymax = upper.PL
+    )
+  
+  # Add unclassified areas
+  sorted_intervals <- PI %>%
+    arrange(lower.PL) %>%
+    select(lower.PL, upper.PL)
+  
+  unclassified_ranges <- data.frame(ymin = numeric(), ymax = numeric())
+  
+  if (min(sorted_intervals$lower.PL) > -Inf) {
+    unclassified_ranges <- rbind(unclassified_ranges, 
+                                data.frame(ymin = -Inf, ymax = min(sorted_intervals$lower.PL)))
+  }
+  
+  for (i in 1:(nrow(sorted_intervals)-1)) {
+    if (sorted_intervals$upper.PL[i] < sorted_intervals$lower.PL[i+1]) {
+      unclassified_ranges <- rbind(unclassified_ranges,
+                                  data.frame(ymin = sorted_intervals$upper.PL[i],
+                                            ymax = sorted_intervals$lower.PL[i+1]))
+    }
+  }
+  
+  if (max(sorted_intervals$upper.PL) < Inf) {
+    unclassified_ranges <- rbind(unclassified_ranges,
+                                data.frame(ymin = max(sorted_intervals$upper.PL),
+                                          ymax = Inf))
+  }
+  
+  if (nrow(unclassified_ranges) > 0) {
+    unclassified_ranges <- unclassified_ranges %>%
+      mutate(
+        posture = "Unclassified",
+        xmin = 0,
+        xmax = 1
+      )
+  }
+  
+  # Combine all ranges
+  all_ranges <- bind_rows(
+    time_ranges,
+    unclassified_ranges
+  ) %>%
+    mutate(
+      posture = factor(posture, levels = c(postures, "Unclassified"))
+    )
+  
+  all_posture_levels <- c(postures, "Unclassified")
+  
+  # Generate the plot
+  classification_plot <- plot_data %>%
+    ggplot() +
+    # Line plot for the actual data
+    geom_line(aes(x = normalized_chip_time, y = normalized_angle_x)) +
+    # Rectangles for posture zones
+    geom_rect(
+      aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = posture), 
+      alpha = 0.4, 
+      data = all_ranges
+    ) +
+    theme_minimal() +
+    labs(
+      title = paste("Posture Classification for Participant", p),
+      subtitle = paste("Location:", loc, "- 15min Free Section"),
+      x = "Normalized Chip Time",
+      y = "Normalized Angle X",
+      fill = "Posture Type"
+    ) 
+  
+  print(proportions_tbl)
+  
+  return(classification_plot)
+}
+```
+
+#### Lower Back
+
+```{r}
+plot_classifications(free_norm, model_preds_lb_pi, "lower_back", 3)
+plot_classifications_advanced(free_norm, model_preds_lb_pi, "lower_back", 3)
+```
+
+#### Lower Back
+
+```{r}
+plot_classifications(free_norm, model_preds_mb_pi, "mid_back", 3)
+plot_classifications_advanced(free_norm, model_preds_mb_pi, "mid_back", 3)
+```
+
+#### Neck
+
+```{r}
+plot_classifications(free_norm, model_preds_n_pi, "neck", 3)
+plot_classifications_advanced(free_norm, model_preds_n_pi, "neck", 3)
+```
+
+## Ridge Plots
+
+### All Devices
+
+```{r}
+#| message: false
+#| warning: false
+free_norm %>%
+  ggplot(aes(x = angle_x, y = device_location, fill = device_location)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(
+      option = "D", 
+      discrete = TRUE,
+      labels = c(
+        "lower_back" = "Lower Back",
+        "mid_back" = "Mid Back",
+        "neck" = "Neck"
+        )
+      ) +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Device',
+      fill = 'Device Type',
+      x = 'Angle X',
+      y = 'Device'
+      ) +
+    theme_ipsum() +
+      theme(
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+
+free_norm %>%
+  ggplot(aes(x = angle_x, y = device_location, fill = device_location)) +
+    facet_wrap(vars(participant)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(
+      option = "D", 
+      discrete = TRUE,
+      labels = c(
+        "lower_back" = "Lower Back",
+        "mid_back" = "Mid Back",
+        "neck" = "Neck"
+        )
+      ) +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Device by Participant',
+      fill = 'Device Type',
+      x = 'Angle X',
+      y = 'Device'
+      ) +
+    theme_ipsum() +
+      theme(
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+
+free_norm %>%
+  ggplot(aes(x = angle_x, y = participant, fill = device_location)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(
+      option = "D", 
+      discrete = TRUE,
+      labels = c(
+        "lower_back" = "Lower Back",
+        "mid_back" = "Mid Back",
+        "neck" = "Neck"
+        )
+      ) +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Participant',
+      fill = 'Device Type',
+      x = 'Angle X',
+      y = 'Device'
+      ) +
+    theme_ipsum() +
+      theme(
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+```
+
+### Lower Back
+
+```{r}
+#| message: false
+#| warning: false
+free_norm %>%
+  filter(device_location == 'lower_back') %>%
+  ggplot(aes(x = angle_x, y = participant, fill = ..x..)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(option = "C") +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Participant', 
+      subtitle = 'Lower Back',
+      x = 'Angle X',
+      y = 'Participant'
+      ) +
+    theme_ipsum() +
+      theme(
+        legend.position="none",
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+```
+
+### Mid Back
+
+```{r}
+#| message: false
+#| warning: false
+free_norm %>%
+  filter(device_location == 'mid_back') %>%
+  ggplot(aes(x = angle_x, y = participant, fill = ..x..)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(option = "C") +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Participant', 
+      subtitle = 'Mid Back',
+      x = 'Angle X',
+      y = 'Participant'
+      ) +
+    theme_ipsum() +
+      theme(
+        legend.position="none",
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+```
+
+### Neck
+
+```{r}
+#| message: false
+#| warning: false
+free_norm %>%
+  filter(device_location == 'neck') %>%
+  ggplot(aes(x = angle_x, y = participant, fill = ..x..)) +
+    geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+    scale_fill_viridis(option = "C") +
+    labs(
+      title = 'Distribution of Time Spent in Normalized Angle X by Participant', 
+      subtitle = 'Neck',
+      x = 'Angle X',
+      y = 'Participant'
+      ) +
+    theme_ipsum() +
+      theme(
+        legend.position="none",
+        panel.spacing = unit(0.1, "lines"),
+        strip.text.x = element_text(size = 8)
+      ) +
+    xlim(-50, 70)
+```
+
